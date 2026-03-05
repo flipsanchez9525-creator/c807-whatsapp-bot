@@ -11,23 +11,26 @@ const PHONE_ID = "937736869432295"
 
 app.post('/webhook-c807', (req, res) => {
 
-  console.log("Webhook completo:", req.body)
+  console.log("Webhook completo:", req.body);
 
-  const data = req.body
+  let data;
 
-  if (!data || Object.keys(data).length === 0) {
-    console.log("Webhook vacío")
-    return res.sendStatus(200)
+  try {
+    const key = Object.keys(req.body)[0]; // toma la clave rara
+    data = JSON.parse(key); // la convierte a JSON
+  } catch (error) {
+    console.log("Error parseando webhook:", error);
+    return res.sendStatus(200);
   }
 
-  const guia = data.guia
-  const estatus = data.estatus
+  const guia = data.guia;
+  const estatus = data.estatus;
 
-  console.log("Guia:", guia)
-  console.log("Estatus:", estatus)
+  console.log("Guia:", guia);
+  console.log("Estatus:", estatus);
 
-  res.sendStatus(200)
-})
+  res.sendStatus(200);
+});
 
 app.listen(3000, () => {
   console.log("Servidor escuchando en puerto 3000")
