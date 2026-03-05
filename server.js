@@ -69,10 +69,29 @@ app.post('/webhook-c807', async (req, res) => {
       return res.sendStatus(200)
     }
 
-    let data = JSON.parse(raw)
+    let data
 
-    const guia = data.guia
-    const estatus = data.estatus
+try {
+  data = JSON.parse(raw)
+} catch (e) {
+  console.log("JSON complejo recibido, intentando extraer datos")
+
+  const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
+  const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
+
+  data = { guia, estatus }
+}
+
+    const guia = data?.guia
+const estatus = data?.estatus || ""
+
+if (!guia) {
+  console.log("Webhook sin guía")
+  return res.sendStatus(200)
+}
+
+console.log("Guia:", guia)
+console.log("Estatus:", estatus)
 
     console.log("Guia:", guia)
     console.log("Estatus:", estatus)
@@ -86,8 +105,28 @@ app.post('/webhook-c807', async (req, res) => {
 
     const telefono = cliente.telefono
 
+// MENSAJE CUANDO SE CREA LA GUÍA
+if (estatus === "Creado en sistema") {
+
+  let mensajeCreado = `📦 C807 Express - Cocinas de Empotrar SV
+
+Hola ${cliente.cliente}
+
+Tu pedido ha sido registrado en nuestro sistema.
+
+Guía: ${guia}
+
+Pronto será recolectado por el servicio de paqueteria 🚚
+
+Puedes seguir el estado aquí:
+https://c807xpress.com/tracking/?guia=${guia}`
+
+  await enviarWhatsApp(telefono, mensajeCreado)
+
+}
+
     // MENSAJE CUANDO SALE A RUTA
-    if (estatus === "En ruta") {
+    if (estatus?.toLowerCase().includes("ruta")) {
 
       let mensajeRuta = `🚚 C807 Express - Cocinas de Empotrar SV
 
@@ -105,7 +144,7 @@ https://c807xpress.com/tracking/?guia=${guia}`
     }
 
     // MENSAJE FINAL
-    if (estatus === "Llegó a su destino") {
+    if (estatus?.toLowerCase().includes("destino")) {
 
       let mensajeEntrega = `✅ C807 Express - Cocinas de Empotrar SV
 
@@ -113,7 +152,10 @@ Hola ${cliente.cliente}
 
 Tu pedido fue entregado exitosamente.
 
-Guía: ${guia}
+📦 Guía: ${guia}
+
+Puedes revisar el historial aquí:
+https://c807xpress.com/tracking/?guia=${guia}
 
 Gracias por confiar en nosotros 🙌`
 
