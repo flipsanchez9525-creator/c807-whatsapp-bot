@@ -15,7 +15,7 @@ const TOKEN = process.env.WHATSAPP_TOKEN
 const C807_TOKEN = process.env.C807_TOKEN || ""
 
 // numero del administrador
-const ADMIN_PHONE = "5037919179"
+const ADMIN_PHONE = "50379191790"
 
 // base de datos simple (memoria)
 const guias = {}
