@@ -6,10 +6,64 @@ const app = express()
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
+// ============================
+// CONFIG
+// ============================
+
 const PHONE_ID = "937736869432295"
 const TOKEN = process.env.WHATSAPP_TOKEN
-// base de datos simple de guías
+const C807_TOKEN = process.env.C807_TOKEN || ""
+
+// base de datos simple (memoria)
 const guias = {}
+const mensajesEnviados = {}
+
+// ============================
+// CONSULTAR TELEFONO EN C807
+// ============================
+
+async function obtenerTelefonoDesdeC807(guia) {
+
+  try {
+
+    const url = `https://app.c807.com/guia.php/madre/ver?guia=${guia}`
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${C807_TOKEN}`,
+        Accept: "application/json"
+      }
+    })
+
+    const data = response.data
+
+    const telefono =
+      data?.destinatario?.telefono ||
+      data?.telefono ||
+      null
+
+    if (!telefono) {
+      console.log("No se encontró teléfono en C807")
+      return null
+    }
+
+    console.log("Telefono encontrado en C807:", telefono)
+
+    return telefono
+
+  } catch (err) {
+
+    console.log("Error consultando C807:", err.message)
+
+    return null
+
+  }
+
+}
+
+// ============================
+// ENVIAR WHATSAPP
+// ============================
 
 async function enviarWhatsApp(telefono, mensaje) {
 
@@ -33,7 +87,7 @@ async function enviarWhatsApp(telefono, mensaje) {
       }
     )
 
-    console.log("Mensaje enviado a WhatsApp")
+    console.log("Mensaje enviado a:", telefono)
 
   } catch (error) {
 
@@ -42,6 +96,11 @@ async function enviarWhatsApp(telefono, mensaje) {
   }
 
 }
+
+// ============================
+// REGISTRAR GUIA MANUAL
+// ============================
+
 app.post("/registrar-guia", (req, res) => {
 
   const { guia, telefono, cliente } = req.body
@@ -51,16 +110,21 @@ app.post("/registrar-guia", (req, res) => {
     cliente
   }
 
-  console.log("Guía registrada:", guia, telefono)
+  console.log("Guía registrada manualmente:", guia)
 
   res.json({ status: "ok" })
 
 })
-app.post('/webhook-c807', async (req, res) => {
+
+// ============================
+// WEBHOOK C807
+// ============================
+
+app.post("/webhook-c807", async (req, res) => {
 
   try {
 
-    console.log("Webhook completo:", req.body)
+    console.log("Webhook recibido:", req.body)
 
     let raw = Object.keys(req.body)[0]
 
@@ -71,107 +135,137 @@ app.post('/webhook-c807', async (req, res) => {
 
     let data
 
-try {
-  data = JSON.parse(raw)
-} catch (e) {
-  console.log("JSON complejo recibido, intentando extraer datos")
+    try {
 
-  const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
-  const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
+      data = JSON.parse(raw)
 
-  data = { guia, estatus }
-}
+    } catch (e) {
+
+      console.log("JSON complejo recibido")
+
+      const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
+      const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
+
+      data = { guia, estatus }
+
+    }
 
     const guia = data?.guia
-const estatus = data?.estatus || ""
+    const estatus = data?.estatus || ""
 
-if (!guia) {
-  console.log("Webhook sin guía")
-  return res.sendStatus(200)
-}
-
-console.log("Guia:", guia)
-console.log("Estatus:", estatus)
+    if (!guia) {
+      console.log("Webhook sin guía")
+      return res.sendStatus(200)
+    }
 
     console.log("Guia:", guia)
     console.log("Estatus:", estatus)
 
-    const cliente = guias[guia]
+    // evitar duplicados
+    const clave = guia + estatus
 
-    if (!cliente) {
-      console.log("Guía no registrada:", guia)
+    if (mensajesEnviados[clave]) {
+      console.log("Mensaje ya enviado")
       return res.sendStatus(200)
     }
 
-    const telefono = cliente.telefono
+    mensajesEnviados[clave] = true
 
-// MENSAJE CUANDO SE CREA LA GUÍA
-if (estatus === "Creado en sistema") {
+    let cliente = guias[guia]
+    let telefono = cliente?.telefono
 
-  let mensajeCreado = `📦 C807 Express - Cocinas de Empotrar SV
+    // si no está registrado, consultar C807
+    if (!telefono) {
 
-Hola ${cliente.cliente}
+      telefono = await obtenerTelefonoDesdeC807(guia)
+
+      if (!telefono) {
+        console.log("No se pudo obtener teléfono")
+        return res.sendStatus(200)
+      }
+
+    }
+
+    // ============================
+    // MENSAJE CUANDO SE CREA
+    // ============================
+
+    if (estatus === "Creado en sistema") {
+
+      const mensaje = `📦 C807 Express - Cocinas de Empotrar SV
 
 Tu pedido ha sido registrado en nuestro sistema.
 
 Guía: ${guia}
 
-Pronto será recolectado por el servicio de paqueteria 🚚
+Pronto será recolectado por el servicio de paquetería 🚚
 
-Puedes seguir el estado aquí:
+Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
 
-  await enviarWhatsApp(telefono, mensajeCreado)
-
-}
-
-    // MENSAJE CUANDO SALE A RUTA
-    if (estatus?.toLowerCase().includes("ruta")) {
-
-      let mensajeRuta = `🚚 C807 Express - Cocinas de Empotrar SV
-
-Hola ${cliente.cliente}
-
-📦 Tu pedido ya va en camino.
-
-Guía: ${guia}
-
-Puedes seguirlo aquí:
-https://c807xpress.com/tracking/?guia=${guia}`
-
-      await enviarWhatsApp(telefono, mensajeRuta)
+      await enviarWhatsApp(telefono, mensaje)
 
     }
 
-    // MENSAJE FINAL
-    if (estatus?.toLowerCase().includes("destino")) {
+    // ============================
+    // CUANDO VA EN RUTA
+    // ============================
 
-      let mensajeEntrega = `✅ C807 Express - Cocinas de Empotrar SV
+    if (estatus.toLowerCase().includes("ruta")) {
 
-Hola ${cliente.cliente}
+      const mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
+
+Tu pedido ya va en camino.
+
+Guía: ${guia}
+
+Seguimiento:
+https://c807xpress.com/tracking/?guia=${guia}`
+
+      await enviarWhatsApp(telefono, mensaje)
+
+    }
+
+    // ============================
+    // CUANDO SE ENTREGA
+    // ============================
+
+    if (estatus.toLowerCase().includes("destino")) {
+
+      const mensaje = `✅ C807 Express - Cocinas de Empotrar SV
 
 Tu pedido fue entregado exitosamente.
 
-📦 Guía: ${guia}
+Guía: ${guia}
 
-Puedes revisar el historial aquí:
+Historial:
 https://c807xpress.com/tracking/?guia=${guia}
 
 Gracias por confiar en nosotros 🙌`
 
-      await enviarWhatsApp(telefono, mensajeEntrega)
+      await enviarWhatsApp(telefono, mensaje)
 
     }
 
   } catch (err) {
 
-    console.log("Error parseando webhook", err)
+    console.log("Error procesando webhook:", err)
 
   }
 
   res.sendStatus(200)
 
 })
+
+// ============================
+// HEALTHCHECK
+// ============================
+
+app.get("/", (req, res) => {
+  res.send("Bot C807 activo")
+})
+
+// ============================
 
 app.listen(3000, () => {
   console.log("Servidor escuchando en puerto 3000")
