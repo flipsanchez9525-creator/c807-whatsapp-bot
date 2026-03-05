@@ -19,7 +19,7 @@ async function enviarWhatsApp(telefono, mensaje) {
       `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
       {
         messaging_product: "whatsapp",
-        to: "50379191790",,
+        to: telefono,
         type: "text",
         text: {
           body: mensaje
