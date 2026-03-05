@@ -11,7 +11,7 @@ const TOKEN = process.env.WHATSAPP_TOKEN
 // base de datos simple de guías
 const guias = {}
 
-async function enviarWhatsApp(mensaje) {
+async function enviarWhatsApp(telefono, mensaje) {
 
   try {
 
@@ -19,7 +19,7 @@ async function enviarWhatsApp(mensaje) {
       `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
       {
         messaging_product: "whatsapp",
-        to: telefono,
+        to: "50379191790",,
         type: "text",
         text: {
           body: mensaje
@@ -56,49 +56,76 @@ app.post("/registrar-guia", (req, res) => {
   res.json({ status: "ok" })
 
 })
-app.post("/webhook-c807", async (req, res) => {
-
-  console.log("Webhook completo:", req.body)
-
-  let data
+app.post('/webhook-c807', async (req, res) => {
 
   try {
 
-    const key = Object.keys(req.body)[0]
-    data = JSON.parse(key)
+    console.log("Webhook completo:", req.body)
 
-  } catch (error) {
+    let raw = Object.keys(req.body)[0]
 
-    console.log("Error parseando webhook")
-    return res.sendStatus(200)
+    if (!raw) {
+      console.log("Webhook vacío")
+      return res.sendStatus(200)
+    }
 
-  }
+    let data = JSON.parse(raw)
 
-  const guia = data.guia
-  const estatus = data.estatus
-const cliente = guias[guia]
+    const guia = data.guia
+    const estatus = data.estatus
 
-if (!cliente) {
-  console.log("Guía no registrada:", guia)
-  return res.sendStatus(200)
-}
+    console.log("Guia:", guia)
+    console.log("Estatus:", estatus)
 
-const telefono = cliente.telefono
+    const cliente = guias[guia]
 
-  console.log("Guia:", guia)
-  console.log("Estatus:", estatus)
+    if (!cliente) {
+      console.log("Guía no registrada:", guia)
+      return res.sendStatus(200)
+    }
 
-let mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
+    const telefono = cliente.telefono
+
+    // MENSAJE CUANDO SALE A RUTA
+    if (estatus === "En ruta") {
+
+      let mensajeRuta = `🚚 C807 Express - Cocinas de Empotrar SV
 
 Hola ${cliente.cliente}
 
-📦 Guía: ${guia}
-📍 Estado: ${estatus}
+📦 Tu pedido ya va en camino.
 
-🔎 Seguimiento:
+Guía: ${guia}
+
+Puedes seguirlo aquí:
 https://c807xpress.com/tracking/?guia=${guia}`
 
-  await enviarWhatsApp(mensaje)
+      await enviarWhatsApp(telefono, mensajeRuta)
+
+    }
+
+    // MENSAJE FINAL
+    if (estatus === "Llegó a su destino") {
+
+      let mensajeEntrega = `✅ C807 Express - Cocinas de Empotrar SV
+
+Hola ${cliente.cliente}
+
+Tu pedido fue entregado exitosamente.
+
+Guía: ${guia}
+
+Gracias por confiar en nosotros 🙌`
+
+      await enviarWhatsApp(telefono, mensajeEntrega)
+
+    }
+
+  } catch (err) {
+
+    console.log("Error parseando webhook", err)
+
+  }
 
   res.sendStatus(200)
 
