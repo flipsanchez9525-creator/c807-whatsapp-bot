@@ -14,6 +14,9 @@ const PHONE_ID = "937736869432295"
 const TOKEN = process.env.WHATSAPP_TOKEN
 const C807_TOKEN = process.env.C807_TOKEN || ""
 
+// numero del administrador
+const ADMIN_PHONE = "5037919179"
+
 // base de datos simple (memoria)
 const guias = {}
 const mensajesEnviados = {}
@@ -75,8 +78,39 @@ async function enviarWhatsApp(telefono, mensaje) {
         messaging_product: "whatsapp",
         to: telefono,
         type: "text",
+        text: { body: mensaje }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    console.log("Mensaje enviado a cliente:", telefono)
+
+  } catch (error) {
+
+    console.log("Error enviando al cliente:", error.response?.data || error.message)
+
+  }
+
+  // enviar copia al admin aunque falle cliente
+  try {
+
+    await axios.post(
+      `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: ADMIN_PHONE,
+        type: "text",
         text: {
-          body: mensaje
+          body: `📢 COPIA DE MENSAJE
+
+Cliente: ${telefono}
+
+${mensaje}`
         }
       },
       {
@@ -87,11 +121,11 @@ async function enviarWhatsApp(telefono, mensaje) {
       }
     )
 
-    console.log("Mensaje enviado a:", telefono)
+    console.log("Copia enviada al admin")
 
   } catch (error) {
 
-    console.log("Error enviando WhatsApp:", error.response?.data || error.message)
+    console.log("Error enviando copia:", error.response?.data || error.message)
 
   }
 
@@ -135,20 +169,29 @@ app.post("/webhook-c807", async (req, res) => {
 
     let data
 
-    try {
+// si C807 envía JSON normal
+if (req.body.guia) {
 
-      data = JSON.parse(raw)
+  data = req.body
 
-    } catch (e) {
+} else {
 
-      console.log("JSON complejo recibido")
+  try {
 
-      const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
-      const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
+    data = JSON.parse(raw)
 
-      data = { guia, estatus }
+  } catch (e) {
 
-    }
+    console.log("JSON complejo recibido")
+
+    const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
+    const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
+
+    data = { guia, estatus }
+
+  }
+
+}
 
     const guia = data?.guia
     const estatus = data?.estatus || ""
@@ -204,6 +247,7 @@ Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
 
       await enviarWhatsApp(telefono, mensaje)
+console.log("WhatsApp enviado:", guia, estatus)
 
     }
 
@@ -223,6 +267,7 @@ Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
 
       await enviarWhatsApp(telefono, mensaje)
+console.log("WhatsApp enviado:", guia, estatus)
 
     }
 
@@ -244,6 +289,7 @@ https://c807xpress.com/tracking/?guia=${guia}
 Gracias por confiar en nosotros 🙌`
 
       await enviarWhatsApp(telefono, mensaje)
+console.log("WhatsApp enviado:", guia, estatus)
 
     }
 
