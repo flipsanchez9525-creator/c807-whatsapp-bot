@@ -8,6 +8,8 @@ app.use(express.urlencoded({ extended: true }))
 
 const PHONE_ID = "937736869432295"
 const TOKEN = process.env.WHATSAPP_TOKEN
+// base de datos simple de guías
+const guias = {}
 
 async function enviarWhatsApp(mensaje) {
 
@@ -40,7 +42,20 @@ async function enviarWhatsApp(mensaje) {
   }
 
 }
+app.post("/registrar-guia", (req, res) => {
 
+  const { guia, telefono, cliente } = req.body
+
+  guias[guia] = {
+    telefono,
+    cliente
+  }
+
+  console.log("Guía registrada:", guia, telefono)
+
+  res.json({ status: "ok" })
+
+})
 app.post("/webhook-c807", async (req, res) => {
 
   console.log("Webhook completo:", req.body)
@@ -61,14 +76,27 @@ app.post("/webhook-c807", async (req, res) => {
 
   const guia = data.guia
   const estatus = data.estatus
+const cliente = guias[guia]
+
+if (!cliente) {
+  console.log("Guía no registrada:", guia)
+  return res.sendStatus(200)
+}
+
+const telefono = cliente.telefono
 
   console.log("Guia:", guia)
   console.log("Estatus:", estatus)
 
-  const mensaje = `📦 Actualización de envío
+let mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
 
-Guía: ${guia}
-Estado: ${estatus}`
+Hola ${cliente.cliente}
+
+📦 Guía: ${guia}
+📍 Estado: ${estatus}
+
+🔎 Seguimiento:
+https://c807xpress.com/tracking/?guia=${guia}`
 
   await enviarWhatsApp(mensaje)
 
