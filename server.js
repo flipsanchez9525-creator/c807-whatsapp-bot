@@ -299,6 +299,38 @@ app.get("/diagnostico-sheets/:guia", async (req, res) => {
 })
 
 // ============================
+// VER QUE ESTA LEYENDO SHEETS
+// ============================
+
+app.get("/ver-sheets", async (req, res) => {
+
+  try {
+
+    const sheets = getSheetsClient()
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: "GUIAS_BOT!A:D"
+    })
+
+    const rows = response.data.values || []
+
+    res.json({
+      filas_encontradas: rows.length,
+      primeras_filas: rows.slice(0, 10)
+    })
+
+  } catch (error) {
+
+    res.json({
+      error: error.message
+    })
+
+  }
+
+})
+
+// ============================
 // DIAGNOSTICO C807
 // ============================
 
