@@ -12,11 +12,8 @@ app.use(express.urlencoded({ extended: true }))
 
 const PHONE_ID = "937736869432295"
 const TOKEN = process.env.WHATSAPP_TOKEN
-
-// número del administrador
 const ADMIN_PHONE = "50379191790"
 
-// base de datos simple (memoria)
 const guias = {}
 const mensajesEnviados = {}
 
@@ -36,43 +33,63 @@ function normalizarTelefono(numero) {
   return limpio
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 // ============================
 // CONSULTAR TELEFONO EN C807
 // ============================
 
-async function obtenerTelefonoDesdeC807(guia) {
-  try {
-    const url = `https://app.c807.com/guia.php/madre/ver?guia=${guia}`
+async function obtenerTelefonoDesdeC807(guia, intentos = 3) {
 
-    console.log("Consultando C807:", url)
+  const url = `https://app.c807.com/guia.php/madre/ver?guia=${guia}`
 
-    const response = await axios.get(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0"
-      },
-      timeout: 15000
-    })
+  for (let i = 1; i <= intentos; i++) {
 
-    const data = response.data
+    try {
 
-    const telefono = data?.datos?.destinatario?.telefono
-    const codigo = data?.datos?.destinatario?.codigo_area || "503"
+      console.log(`Consultando C807 intento ${i}:`, url)
 
-    if (!telefono) {
-      console.log("No se encontró teléfono en C807")
-      return null
+      const response = await axios.get(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0"
+        },
+        timeout: 30000
+      })
+
+      const data = response.data
+
+      const telefono = data?.datos?.destinatario?.telefono
+      const codigo = data?.datos?.destinatario?.codigo_area || "503"
+
+      if (!telefono) {
+        console.log("No se encontró teléfono en C807")
+        return null
+      }
+
+      const telefonoCompleto = normalizarTelefono(`${codigo}${telefono}`)
+
+      console.log("Telefono encontrado en C807:", telefonoCompleto)
+
+      return telefonoCompleto
+
+    } catch (err) {
+
+      console.log("Error consultando C807:", err.message)
+
+      if (i === intentos) {
+        return null
+      }
+
+      console.log("Reintentando en 3 segundos...")
+      await sleep(3000)
+
     }
 
-    const telefonoCompleto = normalizarTelefono(`${codigo}${telefono}`)
-
-    console.log("Telefono encontrado en C807:", telefonoCompleto)
-
-    return telefonoCompleto
-  } catch (err) {
-    console.log("Error consultando C807:", err.response?.data || err.message)
-    return null
   }
+
 }
 
 // ============================
@@ -80,41 +97,16 @@ async function obtenerTelefonoDesdeC807(guia) {
 // ============================
 
 async function enviarWhatsApp(telefono, mensaje, guia = "", estatus = "") {
+
   const telefonoCliente = normalizarTelefono(telefono)
   const telefonoAdmin = normalizarTelefono(ADMIN_PHONE)
-
-  if (!telefonoCliente) {
-    console.log("No hay teléfono válido para enviar WhatsApp")
-    return {
-      enviadoCliente: false,
-      enviadoAdmin: false,
-      errorCliente: "Telefono inválido"
-    }
-  }
-
-  if (!telefonoAdmin) {
-    console.log("No hay teléfono válido del administrador")
-    return {
-      enviadoCliente: false,
-      enviadoAdmin: false,
-      errorCliente: "Telefono admin inválido"
-    }
-  }
-
-  if (!mensaje) {
-    console.log("No hay mensaje para enviar")
-    return {
-      enviadoCliente: false,
-      enviadoAdmin: false,
-      errorCliente: "Mensaje vacío"
-    }
-  }
 
   let enviadoCliente = false
   let enviadoAdmin = false
   let errorCliente = null
 
   try {
+
     await axios.post(
       `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
       {
@@ -134,20 +126,27 @@ async function enviarWhatsApp(telefono, mensaje, guia = "", estatus = "") {
 
     enviadoCliente = true
     console.log("Mensaje enviado a cliente:", telefonoCliente)
+
   } catch (error) {
+
     errorCliente = error.response?.data || error.message
     console.log("Error enviando al cliente:", errorCliente)
+
   }
 
   try {
+
     const copiaAdmin = `📢 REPORTE DE ENVÍO
 
 Guía: ${guia}
 Estatus: ${estatus}
 Cliente: ${telefonoCliente}
+
 Resultado cliente: ${enviadoCliente ? "ENVIADO" : "FALLÓ"}
 
-${!enviadoCliente ? `Error: ${JSON.stringify(errorCliente)}\n` : ""}Mensaje enviado:
+${!enviadoCliente ? `Error: ${JSON.stringify(errorCliente)}` : ""}
+
+Mensaje enviado:
 ${mensaje}`
 
     await axios.post(
@@ -169,8 +168,11 @@ ${mensaje}`
 
     enviadoAdmin = true
     console.log("Copia enviada al admin")
+
   } catch (error) {
+
     console.log("Error enviando copia:", error.response?.data || error.message)
+
   }
 
   return {
@@ -178,6 +180,7 @@ ${mensaje}`
     enviadoAdmin,
     errorCliente
   }
+
 }
 
 // ============================
@@ -185,20 +188,58 @@ ${mensaje}`
 // ============================
 
 app.post("/registrar-guia", (req, res) => {
+
   const { guia, telefono, cliente } = req.body
 
   if (!guia) {
-    return res.status(400).json({ error: "La guía es obligatoria" })
+    return res.status(400).json({ error: "Guía requerida" })
   }
 
   guias[guia] = {
     telefono: normalizarTelefono(telefono),
-    cliente: cliente || ""
+    cliente
   }
 
-  console.log("Guía registrada manualmente:", guia, guias[guia])
+  console.log("Guía registrada manualmente:", guia)
 
-  res.json({ status: "ok", guia })
+  res.json({ status: "ok" })
+
+})
+
+// ============================
+// ENDPOINT DIAGNOSTICO C807
+// ============================
+
+app.get("/diagnostico-c807/:guia", async (req, res) => {
+
+  const guia = req.params.guia
+  const inicio = Date.now()
+
+  try {
+
+    const telefono = await obtenerTelefonoDesdeC807(guia, 1)
+
+    const tiempo = Date.now() - inicio
+
+    res.json({
+      ok: true,
+      guia,
+      telefono,
+      tiempo_ms: tiempo
+    })
+
+  } catch (error) {
+
+    const tiempo = Date.now() - inicio
+
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+      tiempo_ms: tiempo
+    })
+
+  }
+
 })
 
 // ============================
@@ -206,29 +247,40 @@ app.post("/registrar-guia", (req, res) => {
 // ============================
 
 app.post("/webhook-c807", async (req, res) => {
+
   try {
+
     console.log("Webhook recibido:", req.body)
 
     let raw = Object.keys(req.body)[0]
     let data
 
-    // si C807 envía JSON normal
     if (req.body.guia) {
+
       data = req.body
+
     } else if (raw) {
+
       try {
+
         data = JSON.parse(raw)
+
       } catch (e) {
+
         console.log("JSON complejo recibido")
 
         const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
         const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
 
         data = { guia, estatus }
+
       }
+
     } else {
+
       console.log("Webhook vacío")
       return res.sendStatus(200)
+
     }
 
     const guia = data?.guia
@@ -242,7 +294,6 @@ app.post("/webhook-c807", async (req, res) => {
     console.log("Guia:", guia)
     console.log("Estatus:", estatus)
 
-    // evitar duplicados
     const clave = `${guia}|${estatus}`
 
     if (mensajesEnviados[clave]) {
@@ -251,87 +302,85 @@ app.post("/webhook-c807", async (req, res) => {
     }
 
     let cliente = guias[guia]
-    let telefono = normalizarTelefono(cliente?.telefono)
+    let telefono = cliente?.telefono
 
-    // si no está registrado, consultar C807
     if (!telefono) {
+
       telefono = await obtenerTelefonoDesdeC807(guia)
 
       if (!telefono) {
         console.log("No se pudo obtener teléfono")
         return res.sendStatus(200)
       }
+
     }
 
     let mensaje = null
     const estatusLower = estatus.toLowerCase()
 
-    // ============================
-    // MENSAJE CUANDO SE CREA
-    // ============================
     if (estatus === "Creado en sistema") {
+
       mensaje = `📦 C807 Express - Cocinas de Empotrar SV
 
-Tu pedido ha sido registrado en nuestro sistema.
+Tu pedido ha sido registrado.
 
 Guía: ${guia}
 
-Pronto será recolectado por el servicio de paquetería 🚚
-
 Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
+
     }
 
-    // ============================
-    // CUANDO VA EN RUTA
-    // ============================
     else if (estatusLower.includes("ruta")) {
-      mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
 
-Tu pedido ya va en camino.
+      mensaje = `🚚 Tu pedido va en camino.
 
 Guía: ${guia}
 
 Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
+
     }
 
-    // ============================
-    // CUANDO SE ENTREGA
-    // ============================
     else if (
       estatusLower.includes("destino") ||
       estatusLower.includes("entregado")
     ) {
-      mensaje = `✅ C807 Express - Cocinas de Empotrar SV
 
-Tu pedido fue entregado exitosamente.
+      mensaje = `✅ Tu pedido fue entregado.
 
 Guía: ${guia}
 
 Historial:
 https://c807xpress.com/tracking/?guia=${guia}
 
-Gracias por confiar en nosotros 🙌`
+Gracias por confiar en Cocinas de Empotrar SV.`
+
     }
 
     if (!mensaje) {
+
       console.log("Estatus sin mensaje configurado:", estatus)
       return res.sendStatus(200)
+
     }
 
     const resultado = await enviarWhatsApp(telefono, mensaje, guia, estatus)
 
-    if (resultado?.enviadoCliente || resultado?.enviadoAdmin) {
+    if (resultado.enviadoCliente || resultado.enviadoAdmin) {
       mensajesEnviados[clave] = true
     }
 
     console.log("Resultado envío:", resultado)
+
   } catch (err) {
-    console.log("Error procesando webhook:", err.response?.data || err.message || err)
+
+    console.log("Error procesando webhook:", err.message)
+
   }
 
   res.sendStatus(200)
+
 })
 
 // ============================
