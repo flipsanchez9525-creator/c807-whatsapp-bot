@@ -31,28 +31,31 @@ async function obtenerTelefonoDesdeC807(guia) {
 
     const url = `https://app.c807.com/guia.php/madre/ver?guia=${guia}`
 
+    console.log("Consultando C807:", url)
+
     const response = await axios.get(url, {
       headers: {
-        Authorization: `Bearer ${C807_TOKEN}`,
-        Accept: "application/json"
-      }
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0"
+      },
+      timeout: 15000
     })
 
     const data = response.data
 
-    const telefono =
-      data?.destinatario?.telefono ||
-      data?.telefono ||
-      null
+    const telefono = data?.datos?.destinatario?.telefono
+    const codigo = data?.datos?.destinatario?.codigo_area
 
     if (!telefono) {
       console.log("No se encontró teléfono en C807")
       return null
     }
 
-    console.log("Telefono encontrado en C807:", telefono)
+    const telefonoCompleto = `${codigo}${telefono}`
 
-    return telefono
+    console.log("Telefono encontrado en C807:", telefonoCompleto)
+
+    return telefonoCompleto
 
   } catch (err) {
 
