@@ -29,10 +29,6 @@ const mensajesEnviados = {}
 // ============================
 
 function getSheetsClient() {
-  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-    throw new Error("Faltan credenciales de Google Sheets")
-  }
-
   const auth = new google.auth.JWT({
     email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: GOOGLE_PRIVATE_KEY,
@@ -43,11 +39,6 @@ function getSheetsClient() {
 }
 
 async function buscarGuiaEnSheets(guiaBuscada) {
-  if (!GOOGLE_SHEET_ID) {
-    console.log("No está configurado GOOGLE_SHEET_ID")
-    return null
-  }
-
   try {
     const sheets = getSheetsClient()
 
@@ -58,18 +49,9 @@ async function buscarGuiaEnSheets(guiaBuscada) {
 
     const rows = response.data.values || []
 
-    if (rows.length < 2) {
-      console.log("La hoja GUIAS_BOT está vacía o solo tiene encabezados")
-      return null
-    }
-
-    // Espera columnas:
-    // A = Guía
-    // B = Telefono
-    // C = Cliente
-    // D = Estado
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i]
+
       const guia = String(row[0] || "").trim()
       const telefono = String(row[1] || "").trim()
       const cliente = String(row[2] || "").trim()
@@ -77,6 +59,7 @@ async function buscarGuiaEnSheets(guiaBuscada) {
 
       if (guia === guiaBuscada) {
         console.log("Guía encontrada en Google Sheets:", guiaBuscada)
+
         return {
           guia,
           telefono,
@@ -89,11 +72,9 @@ async function buscarGuiaEnSheets(guiaBuscada) {
 
     console.log("Guía no encontrada en Google Sheets:", guiaBuscada)
     return null
+
   } catch (error) {
-    console.log(
-      "Error consultando Google Sheets:",
-      error.response?.data || error.message
-    )
+    console.log("Error consultando Google Sheets:", error.message)
     return null
   }
 }
@@ -107,13 +88,21 @@ function normalizarTelefono(numero) {
 
   let limpio = String(numero).replace(/\D/g, "")
 
-  if (!limpio) return null
-
   if (!limpio.startsWith("503")) {
     limpio = "503" + limpio
   }
 
   return limpio
+}
+
+function decodificarTextoEscapado(texto) {
+  if (typeof texto !== "string") return texto
+
+  try {
+    return JSON.parse(`"${texto.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+  } catch {
+    return texto
+  }
 }
 
 function sleep(ms) {
@@ -139,26 +128,18 @@ async function obtenerTelefonoDesdeC807(guia, intentos = 2) {
         timeout: 30000
       })
 
-      const data = response.data
-      const telefono = data?.datos?.destinatario?.telefono
-      const codigo = data?.datos?.destinatario?.codigo_area || "503"
+      const telefono = response.data?.datos?.destinatario?.telefono
+      const codigo = response.data?.datos?.destinatario?.codigo_area || "503"
 
-      if (!telefono) {
-        console.log("No se encontró teléfono en C807")
-        return null
-      }
+      if (!telefono) return null
 
-      const telefonoCompleto = normalizarTelefono(`${codigo}${telefono}`)
+      return normalizarTelefono(`${codigo}${telefono}`)
 
-      console.log("Telefono encontrado en C807:", telefonoCompleto)
-
-      return telefonoCompleto
     } catch (err) {
-      console.log("Error consultando C807:", err.response?.data || err.message)
 
-      if (i === intentos) {
-        return null
-      }
+      console.log("Error consultando C807:", err.message)
+
+      if (i === intentos) return null
 
       console.log("Reintentando C807 en 3 segundos...")
       await sleep(3000)
@@ -172,23 +153,23 @@ async function obtenerTelefonoDesdeC807(guia, intentos = 2) {
 // ENVIAR WHATSAPP
 // ============================
 
-async function enviarWhatsApp(telefono, mensaje, guia = "", estatus = "") {
+async function enviarWhatsApp(
+  telefono,
+  mensaje,
+  guia = "",
+  estatus = "",
+  nombreCliente = ""
+) {
+
   const telefonoCliente = normalizarTelefono(telefono)
   const telefonoAdmin = normalizarTelefono(ADMIN_PHONE)
-
-  if (!telefonoCliente) {
-    return {
-      enviadoCliente: false,
-      enviadoAdmin: false,
-      errorCliente: "Telefono cliente inválido"
-    }
-  }
 
   let enviadoCliente = false
   let enviadoAdmin = false
   let errorCliente = null
 
   try {
+
     await axios.post(
       `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
       {
@@ -201,24 +182,27 @@ async function enviarWhatsApp(telefono, mensaje, guia = "", estatus = "") {
         headers: {
           Authorization: `Bearer ${TOKEN}`,
           "Content-Type": "application/json"
-        },
-        timeout: 15000
+        }
       }
     )
 
     enviadoCliente = true
-    console.log("Mensaje enviado a cliente:", telefonoCliente)
+
   } catch (error) {
+
     errorCliente = error.response?.data || error.message
     console.log("Error enviando al cliente:", errorCliente)
+
   }
 
   try {
+
     const copiaAdmin = `📢 REPORTE DE ENVÍO
 
 Guía: ${guia}
 Estatus: ${estatus}
-Cliente: ${telefonoCliente}
+Cliente: ${nombreCliente || "No disponible"}
+Teléfono: ${telefonoCliente}
 Resultado cliente: ${enviadoCliente ? "ENVIADO" : "FALLÓ"}
 
 ${!enviadoCliente ? `Error: ${JSON.stringify(errorCliente)}\n` : ""}Mensaje enviado:
@@ -236,15 +220,16 @@ ${mensaje}`
         headers: {
           Authorization: `Bearer ${TOKEN}`,
           "Content-Type": "application/json"
-        },
-        timeout: 15000
+        }
       }
     )
 
     enviadoAdmin = true
-    console.log("Copia enviada al admin")
+
   } catch (error) {
-    console.log("Error enviando copia:", error.response?.data || error.message)
+
+    console.log("Error enviando copia:", error.message)
+
   }
 
   return {
@@ -255,127 +240,13 @@ ${mensaje}`
 }
 
 // ============================
-// REGISTRAR GUIA MANUAL
-// ============================
-
-app.post("/registrar-guia", (req, res) => {
-  const { guia, telefono, cliente } = req.body
-
-  if (!guia) {
-    return res.status(400).json({ error: "Guía requerida" })
-  }
-
-  guias[guia] = {
-    telefono: normalizarTelefono(telefono),
-    cliente: cliente || ""
-  }
-
-  console.log("Guía registrada manualmente:", guia)
-
-  res.json({ status: "ok", guia })
-})
-
-// ============================
-// DIAGNOSTICO GOOGLE SHEETS
-// ============================
-
-app.get("/diagnostico-sheets/:guia", async (req, res) => {
-  const { guia } = req.params
-
-  const resultado = await buscarGuiaEnSheets(guia)
-
-  if (!resultado) {
-    return res.status(404).json({
-      ok: false,
-      guia,
-      mensaje: "Guía no encontrada en Google Sheets"
-    })
-  }
-
-  return res.json({
-    ok: true,
-    data: resultado
-  })
-})
-
-// ============================
-// VER QUE ESTA LEYENDO SHEETS
-// ============================
-
-app.get("/ver-sheets", async (req, res) => {
-
-  try {
-
-    const sheets = getSheetsClient()
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: "GUIAS_BOT!A:D"
-    })
-
-    const rows = response.data.values || []
-
-    res.json({
-      filas_encontradas: rows.length,
-      primeras_filas: rows.slice(0, 10)
-    })
-
-  } catch (error) {
-
-    res.json({
-      error: error.message
-    })
-
-  }
-
-})
-
-// ============================
-// DIAGNOSTICO C807
-// ============================
-
-app.get("/diagnostico-c807/:guia", async (req, res) => {
-  const { guia } = req.params
-  const inicio = Date.now()
-
-  try {
-    const telefono = await obtenerTelefonoDesdeC807(guia, 1)
-    const tiempo = Date.now() - inicio
-
-    if (!telefono) {
-      return res.status(504).json({
-        ok: false,
-        guia,
-        telefono: null,
-        tiempo_ms: tiempo,
-        mensaje: "No se pudo obtener teléfono desde C807"
-      })
-    }
-
-    res.json({
-      ok: true,
-      guia,
-      telefono,
-      tiempo_ms: tiempo
-    })
-  } catch (error) {
-    const tiempo = Date.now() - inicio
-
-    res.status(500).json({
-      ok: false,
-      guia,
-      error: error.message,
-      tiempo_ms: tiempo
-    })
-  }
-})
-
-// ============================
 // WEBHOOK C807
 // ============================
 
 app.post("/webhook-c807", async (req, res) => {
+
   try {
+
     console.log("Webhook recibido:", req.body)
 
     let raw = Object.keys(req.body)[0]
@@ -383,67 +254,57 @@ app.post("/webhook-c807", async (req, res) => {
 
     if (req.body.guia) {
       data = req.body
-    } else if (raw) {
+    } else {
       try {
         data = JSON.parse(raw)
-      } catch (e) {
-        console.log("JSON complejo recibido")
+      } catch {
 
         const guia = raw.match(/"guia":"([^"]+)"/)?.[1]
         const estatus = raw.match(/"estatus":"([^"]+)"/)?.[1]
 
         data = { guia, estatus }
       }
-    } else {
-      console.log("Webhook vacío")
-      return res.sendStatus(200)
     }
 
-    const guia = data?.guia
-    const estatus = data?.estatus || ""
+    const guia = decodificarTextoEscapado(data?.guia)
+    const estatus = decodificarTextoEscapado(data?.estatus || "")
 
-    if (!guia) {
-      console.log("Webhook sin guía")
-      return res.sendStatus(200)
-    }
-
-    console.log("Guia:", guia)
-    console.log("Estatus:", estatus)
+    if (!guia) return res.sendStatus(200)
 
     const clave = `${guia}|${estatus}`
 
     if (mensajesEnviados[clave]) {
-      console.log("Mensaje ya enviado")
       return res.sendStatus(200)
     }
 
-    // 1) memoria local
     let telefono = normalizarTelefono(guias[guia]?.telefono)
+    let nombreCliente = guias[guia]?.cliente || ""
 
-    // 2) Google Sheets
     if (!telefono) {
+
       const datoSheet = await buscarGuiaEnSheets(guia)
 
       if (datoSheet?.telefono) {
         telefono = normalizarTelefono(datoSheet.telefono)
-        console.log("Teléfono obtenido desde Google Sheets:", telefono)
+        nombreCliente = datoSheet.cliente
       }
+
     }
 
-    // 3) C807 como respaldo
     if (!telefono) {
       telefono = await obtenerTelefonoDesdeC807(guia)
+    }
 
-      if (!telefono) {
-        console.log("No se pudo obtener teléfono ni por Sheets ni por C807")
-        return res.sendStatus(200)
-      }
+    if (!telefono) {
+      console.log("No se pudo obtener teléfono")
+      return res.sendStatus(200)
     }
 
     let mensaje = null
     const estatusLower = estatus.toLowerCase()
 
     if (estatus === "Creado en sistema") {
+
       mensaje = `📦 C807 Express - Cocinas de Empotrar SV
 
 Tu pedido ha sido registrado en nuestro sistema.
@@ -452,7 +313,9 @@ Guía: ${guia}
 
 Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
+
     } else if (estatusLower.includes("ruta")) {
+
       mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
 
 Tu pedido ya va en camino.
@@ -461,10 +324,9 @@ Guía: ${guia}
 
 Seguimiento:
 https://c807xpress.com/tracking/?guia=${guia}`
-    } else if (
-      estatusLower.includes("destino") ||
-      estatusLower.includes("entregado")
-    ) {
+
+    } else if (estatusLower.includes("destino") || estatusLower.includes("entregado")) {
+
       mensaje = `✅ C807 Express - Cocinas de Empotrar SV
 
 Tu pedido fue entregado exitosamente.
@@ -477,20 +339,26 @@ https://c807xpress.com/tracking/?guia=${guia}
 Gracias por confiar en nosotros 🙌`
     }
 
-    if (!mensaje) {
-      console.log("Estatus sin mensaje configurado:", estatus)
-      return res.sendStatus(200)
-    }
+    if (!mensaje) return res.sendStatus(200)
 
-    const resultado = await enviarWhatsApp(telefono, mensaje, guia, estatus)
+    const resultado = await enviarWhatsApp(
+      telefono,
+      mensaje,
+      guia,
+      estatus,
+      nombreCliente
+    )
 
     if (resultado.enviadoCliente || resultado.enviadoAdmin) {
       mensajesEnviados[clave] = true
     }
 
     console.log("Resultado envío:", resultado)
+
   } catch (err) {
-    console.log("Error procesando webhook:", err.response?.data || err.message || err)
+
+    console.log("Error webhook:", err.message)
+
   }
 
   res.sendStatus(200)
