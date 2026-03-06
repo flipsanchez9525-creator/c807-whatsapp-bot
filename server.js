@@ -98,11 +98,12 @@ function normalizarTelefono(numero) {
 function decodificarTextoEscapado(texto) {
   if (typeof texto !== "string") return texto
 
-  try {
-    return JSON.parse(`"${texto.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
-  } catch {
-    return texto
-  }
+  return texto
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\")
 }
 
 function sleep(ms) {
