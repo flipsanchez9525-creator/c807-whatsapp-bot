@@ -11,7 +11,7 @@ app.use(express.urlencoded({ extended: true }))
 // CONFIG
 // ============================
 
-const PHONE_ID = "937736869432295"
+const PHONE_ID = "1122034414325237"
 const TOKEN = process.env.WHATSAPP_TOKEN
 const ADMIN_PHONE = "50379191790"
 
