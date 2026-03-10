@@ -424,6 +424,74 @@ app.get("/probar-admin", async (req, res) => {
 })
 
 // ============================
+// REENVIAR SOLO GUIAS EN RUTA
+// ============================
+
+app.get("/reenviar-ruta/:guia", async (req, res) => {
+  try {
+    const { guia } = req.params
+
+    const datoSheet = await buscarGuiaEnSheets(guia)
+
+    if (!datoSheet?.telefono) {
+      return res.status(404).json({
+        ok: false,
+        guia,
+        mensaje: "No se encontró la guía o el teléfono en Google Sheets"
+      })
+    }
+
+    const telefono = normalizarTelefono(datoSheet.telefono)
+    const nombreCliente = datoSheet.cliente || ""
+    const estatus = decodificarTextoEscapado(datoSheet.estado || "")
+    const estatusLower = estatus.toLowerCase()
+
+    if (!estatusLower.includes("ruta")) {
+      return res.status(400).json({
+        ok: false,
+        guia,
+        estatus,
+        mensaje: "La guía no está en estado 'En ruta a destino'"
+      })
+    }
+
+    const mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
+
+Tu pedido ya va en camino.
+
+Guía: ${guia}
+
+Seguimiento:
+https://c807xpress.com/tracking/?guia=${guia}
+
+ℹ️ Este es un mensaje automático de seguimiento.
+Para consultas o ayuda con tu pedido, escríbenos al 70006782.`
+
+    const resultado = await enviarWhatsApp(
+      telefono,
+      mensaje,
+      guia,
+      estatus,
+      nombreCliente
+    )
+
+    return res.json({
+      ok: true,
+      guia,
+      telefono,
+      nombreCliente,
+      estatus,
+      resultado
+    })
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: error.response?.data || error.message
+    })
+  }
+})
+
+// ============================
 
 app.listen(3000, () => {
   console.log("Servidor escuchando en puerto 3000")
