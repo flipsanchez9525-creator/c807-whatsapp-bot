@@ -401,6 +401,27 @@ Gracias por confiar en nosotros 🙌`
 app.get("/", (req, res) => {
   res.send("Bot C807 activo")
 })
+app.get("/probar-admin", async (req, res) => {
+  try {
+    const resultado = await enviarWhatsApp(
+      "50379191790",
+      "Prueba directa al admin desde el bot 78069004",
+      "PRUEBA-ADMIN",
+      "Prueba manual",
+      "Admin"
+    )
+
+    res.json({
+      ok: true,
+      resultado
+    })
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error.response?.data || error.message
+    })
+  }
+})
 
 // ============================
 
