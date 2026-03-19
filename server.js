@@ -108,8 +108,119 @@ function decodificarTextoEscapado(texto) {
 }
 
 // ============================
-// ENVIAR WHATSAPP
+// ENVIAR TEMPLATE WHATSAPP
 // ============================
+
+async function enviarTemplateWhatsApp(
+  telefono,
+  templateName,
+  parametros = [],
+  guia = "",
+  estatus = "",
+  nombreCliente = ""
+) {
+  const telefonoCliente = normalizarTelefono(telefono)
+  const telefonoAdmin = normalizarTelefono(ADMIN_PHONE)
+
+  if (!telefonoCliente) {
+    return {
+      enviadoCliente: false,
+      enviadoAdmin: false,
+      errorCliente: "Telefono cliente inválido"
+    }
+  }
+
+  let enviadoCliente = false
+  let enviadoAdmin = false
+  let errorCliente = null
+  let respuestaCliente = null
+
+  try {
+    const response = await axios.post(
+      `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: telefonoCliente,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: "es" },
+          components: [
+            {
+              type: "body",
+              parameters: parametros.map(valor => ({
+                type: "text",
+                text: String(valor || "")
+              }))
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 15000
+      }
+    )
+
+    enviadoCliente = true
+    respuestaCliente = response.data
+    console.log("Respuesta Meta cliente:", JSON.stringify(response.data))
+  } catch (error) {
+    errorCliente = error.response?.data || error.message
+    console.log("Error enviando template al cliente:", errorCliente)
+  }
+
+  try {
+    const copiaAdmin = `📢 REPORTE DE ENVÍO
+
+Guía: ${guia}
+Estatus: ${estatus}
+Cliente: ${nombreCliente || "No disponible"}
+Teléfono: ${telefonoCliente}
+Template: ${templateName}
+Parámetros: ${JSON.stringify(parametros)}
+Resultado cliente: ${enviadoCliente ? "ENVIADO" : "FALLÓ"}
+
+${!enviadoCliente ? `Error: ${JSON.stringify(errorCliente)}\n` : ""}
+${enviadoCliente ? `Respuesta Meta: ${JSON.stringify(respuestaCliente)}\n` : ""}`
+
+    await axios.post(
+      `https://graph.facebook.com/v22.0/${PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: telefonoAdmin,
+        type: "text",
+        text: { body: copiaAdmin }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 15000
+      }
+    )
+
+    enviadoAdmin = true
+  } catch (error) {
+    console.log("Error enviando copia admin:", error.response?.data || error.message)
+  }
+
+  return {
+    enviadoCliente,
+    enviadoAdmin,
+    errorCliente,
+    respuestaCliente
+  }
+}
+
+// ============================
+// ENVIAR WHATSAPP TEXTO LIBRE
+// ============================
+// Se deja por si luego quieres usarlo para pruebas internas o admin.
 
 async function enviarWhatsApp(
   telefono,
@@ -323,60 +434,32 @@ app.post("/webhook-c807", async (req, res) => {
       return res.sendStatus(200)
     }
 
-    let mensaje = null
     const estatusLower = estatus.toLowerCase()
+    const trackingUrl = `https://c807xpress.com/tracking/?guia=${guia}`
 
-    if (estatus === "Creado en sistema") {
-      mensaje = `📦 C807 Express - Cocinas de Empotrar SV
+    let templateName = null
+    let templateParams = []
 
-Tu pedido ha sido registrado en nuestro sistema.
-
-Guía: ${guia}
-
-Seguimiento:
-https://c807xpress.com/tracking/?guia=${guia}
-
-ℹ️ Este es un mensaje automático de seguimiento.
-Para consultas o ayuda con tu pedido, escríbenos al 70006782.`
-    } else if (estatusLower.includes("ruta")) {
-      mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
-
-Tu pedido ya va en camino.
-
-Guía: ${guia}
-
-Seguimiento:
-https://c807xpress.com/tracking/?guia=${guia}
-
-ℹ️ Este es un mensaje automático de seguimiento.
-Para consultas o ayuda con tu pedido, escríbenos al 70006782.`
+    if (estatusLower.includes("ruta")) {
+      templateName = "envio_en_ruta"
+      templateParams = [guia, trackingUrl]
     } else if (
       estatusLower.includes("destino") ||
       estatusLower.includes("entregado")
     ) {
-      mensaje = `✅ C807 Express - Cocinas de Empotrar SV
-
-Tu pedido fue entregado exitosamente.
-
-Guía: ${guia}
-
-Historial:
-https://c807xpress.com/tracking/?guia=${guia}
-
-ℹ️ Este es un mensaje automático de seguimiento.
-Para consultas o ayuda con tu pedido, escríbenos al 70006782.
-
-Gracias por confiar en nosotros 🙌`
+      templateName = "envio_entregado"
+      templateParams = [guia, trackingUrl]
     }
 
-    if (!mensaje) {
-      console.log("Estatus sin mensaje configurado:", estatus)
+    if (!templateName) {
+      console.log("Estatus sin template configurado:", estatus)
       return res.sendStatus(200)
     }
 
-    const resultado = await enviarWhatsApp(
+    const resultado = await enviarTemplateWhatsApp(
       telefono,
-      mensaje,
+      templateName,
+      templateParams,
       guia,
       estatus,
       nombreCliente
@@ -401,6 +484,7 @@ Gracias por confiar en nosotros 🙌`
 app.get("/", (req, res) => {
   res.send("Bot C807 activo")
 })
+
 app.get("/probar-admin", async (req, res) => {
   try {
     const resultado = await enviarWhatsApp(
@@ -455,21 +539,12 @@ app.get("/reenviar-ruta/:guia", async (req, res) => {
       })
     }
 
-    const mensaje = `🚚 C807 Express - Cocinas de Empotrar SV
+    const trackingUrl = `https://c807xpress.com/tracking/?guia=${guia}`
 
-Tu pedido ya va en camino.
-
-Guía: ${guia}
-
-Seguimiento:
-https://c807xpress.com/tracking/?guia=${guia}
-
-ℹ️ Este es un mensaje automático de seguimiento.
-Para consultas o ayuda con tu pedido, escríbenos al 70006782.`
-
-    const resultado = await enviarWhatsApp(
+    const resultado = await enviarTemplateWhatsApp(
       telefono,
-      mensaje,
+      "envio_en_ruta",
+      [guia, trackingUrl],
       guia,
       estatus,
       nombreCliente
