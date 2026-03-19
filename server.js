@@ -513,30 +513,20 @@ app.get("/reenviar-ruta/:guia", async (req, res) => {
       })
     }
 
-    const telefono = normalizarTelefono(datoSheet.telefono)
-    const nombreCliente = datoSheet.cliente || ""
-    const estatus = decodificarTextoEscapado(datoSheet.estado || "")
-    const estatusLower = estatus.toLowerCase()
+const telefono = normalizarTelefono(datoSheet.telefono)
+const nombreCliente = datoSheet.cliente || ""
+const estatus = decodificarTextoEscapado(datoSheet.estado || "")
 
-    if (!estatusLower.includes("ruta")) {
-      return res.status(400).json({
-        ok: false,
-        guia,
-        estatus,
-        mensaje: "La guía no está en estado 'En ruta a destino'"
-      })
-    }
+const trackingUrl = `https://c807xpress.com/tracking/?guia=${guia}`
 
-    const trackingUrl = `https://c807xpress.com/tracking/?guia=${guia}`
-
-    const resultado = await enviarTemplateWhatsApp(
-      telefono,
-      "envio_en_ruta",
-      [guia, trackingUrl],
-      guia,
-      estatus,
-      nombreCliente
-    )
+const resultado = await enviarTemplateWhatsApp(
+  telefono,
+  "envio_en_ruta",
+  [guia, trackingUrl],
+  guia,
+  "Reenvío manual - En ruta",
+  nombreCliente
+)
 
     return res.json({
       ok: true,
