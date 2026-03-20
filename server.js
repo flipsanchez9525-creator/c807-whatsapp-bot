@@ -403,7 +403,19 @@ app.post("/webhook-c807", async (req, res) => {
       }
     }
 
-const estatus = decodificarTextoEscapado(datoSheet.estado || "")
+    const guia = decodificarTextoEscapado(data?.guia)
+    const estatus = decodificarTextoEscapado(data?.estatus || "")
+
+    if (!guia) {
+      return res.sendStatus(200)
+    }
+
+    const clave = `${guia}|${estatus}`
+
+    if (mensajesEnviados[clave]) {
+      console.log("Mensaje ya enviado:", clave)
+      return res.sendStatus(200)
+    }
 
     let telefono = normalizarTelefono(guias[guia]?.telefono)
     let nombreCliente = guias[guia]?.cliente || ""
