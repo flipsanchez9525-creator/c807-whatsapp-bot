@@ -1,11 +1,20 @@
-const express = require("express")
-const axios = require("axios")
-const { google } = require("googleapis")
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const { google } = require("googleapis");
 
-const app = express()
+const app = express();
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(cors({
+  origin: ["https://app.c807.com"],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+
+app.options("*", cors());
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ============================
 // CONFIG
@@ -28,12 +37,14 @@ const mensajesEnviados = {}
 // GOOGLE SHEETS
 // ============================
 
-function getSheetsClient() {
+async function getSheetsClient() {
   const auth = new google.auth.JWT({
     email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: GOOGLE_PRIVATE_KEY,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   })
+
+  await auth.authorize()
 
   return google.sheets({ version: "v4", auth })
 }
@@ -328,6 +339,48 @@ app.post("/registrar-guia", (req, res) => {
   console.log("Guía registrada manualmente:", guia)
 
   res.json({ status: "ok", guia })
+})
+
+// ============================
+// NUEVO ENDPOINT CREAR GUIA (FASE 1)
+// ============================
+
+app.post("/registrar-guia-fase1", async (req, res) => {
+  try {
+    const data = req.body || {}
+
+    const sheets = await getSheetsClient()
+
+    const values = [[
+      new Date().toISOString(),
+      data.guia || "",
+      data.numero_orden || "",
+      data.nombre || "",
+      data.telefono || "",
+      data.departamento || "",
+      data.municipio || "",
+      data.direccion || "",
+      data.peso || "",
+      data.contenido || "",
+      data.tipo_servicio || "",
+      data.estado_inicial || "Creada"
+    ]]
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: "GUIAS_CREADAS!A:L",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values }
+    })
+
+    res.json({ ok: true, recibido: data })
+  } catch (error) {
+    console.error("Error registrando guía fase 1:", error.response?.data || error.message)
+    res.status(500).json({
+      ok: false,
+      error: error.response?.data || error.message
+    })
+  }
 })
 
 // ============================
