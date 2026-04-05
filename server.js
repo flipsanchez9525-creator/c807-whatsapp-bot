@@ -11,8 +11,6 @@ app.use(cors({
   allowedHeaders: ["Content-Type"]
 }));
 
-app.options("*", cors());
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -41,7 +39,7 @@ async function getSheetsClient() {
   const auth = new google.auth.JWT({
     email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: GOOGLE_PRIVATE_KEY,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
   })
 
   await auth.authorize()
@@ -51,7 +49,7 @@ async function getSheetsClient() {
 
 async function buscarGuiaEnSheets(guiaBuscada) {
   try {
-    const sheets = getSheetsClient()
+    const sheets = await getSheetsClient()
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: GOOGLE_SHEET_ID,
@@ -412,7 +410,7 @@ app.get("/diagnostico-sheets/:guia", async (req, res) => {
 
 app.get("/ver-sheets", async (req, res) => {
   try {
-    const sheets = getSheetsClient()
+    const sheets = await getSheetsClient()
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: GOOGLE_SHEET_ID,
